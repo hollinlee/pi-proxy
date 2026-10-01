@@ -55,14 +55,21 @@ export function registerProxyTools(pi: ExtensionAPI, options: AdapterOptions = {
         new EnvironmentCredentialProvider(env),
         ...((options.platform ?? process.platform) === "darwin" ? [new MacOSKeychainCredentialProvider()] : []),
       ];
-      pending = (options.create ?? createRuntime)({
+      const created = (options.create ?? createRuntime)({
         config,
         env,
         credentials: new ChainCredentialProvider(providers),
+      });
+      let tracked: Promise<ProxyRuntime>;
+      tracked = created.catch((error) => {
+        if (pending === tracked) pending = undefined;
+        current = undefined;
+        throw error;
       }).then((runtime) => {
         current = runtime;
         return runtime;
       });
+      pending = tracked;
     }
     return pending;
   };

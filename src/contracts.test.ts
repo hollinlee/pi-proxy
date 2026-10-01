@@ -11,6 +11,9 @@ test("reject malformed, unsafe and partial config", () => {
   for (const env of [{ PROXY_PORT: "3abc", PROXY_HOST: "localhost" }, { PROXY_PORT: "", PROXY_HOST: "localhost" }, { PROXY_PORT: "65536", PROXY_HOST: "localhost" }, { PROXY_HOST: "localhost" }, { PI_PROXY_GITHUB_URL: "http://github.com" }, { PI_PROXY_CONTROLLER_URL: "http://u:p@localhost" }, { PI_PROXY_CANDIDATE_LIMIT: "17" }]) assert.throws(() => readRuntimeConfig(env), ConfigError);
   assert.throws(() => readRuntimeConfig({}, { fallback: { executable: "/bin/core", source: { kind: "content", yaml: "x: y" }, controllerHost: "127.0.0.1", controllerPort: 65536 } }), ConfigError);
   assert.equal(readRuntimeConfig({}, { fallback: { executable: "/bin/core", source: { kind: "content", yaml: "x: y" }, controllerHost: "127.0.0.1" } }).fallback?.source.kind, "content");
+  for (const fallback of [null, {}, { executable: "/bin/core", controllerHost: "127.0.0.1" }, { executable: "/bin/core", source: { kind: "unknown", value: "x" }, controllerHost: "127.0.0.1" }, { executable: "relative/core", source: { kind: "content", yaml: "x: y" }, controllerHost: "127.0.0.1" }, { executable: "/bin/core", source: { kind: "content", yaml: "x: y" }, controllerHost: "127.0.0.1", controllerPort: "9000" }]) {
+    assert.throws(() => readRuntimeConfig({}, { fallback } as any), ConfigError);
+  }
 });
 test("redacts nested values, keys, errors and overlapping secrets", () => {
   assert.deepEqual(redact({ message: "secret-long", token: "hidden", nested: ["secret"] }, ["secret", "secret-long"]), { message: "[REDACTED]", token: "[REDACTED]", nested: ["[REDACTED]"] });
