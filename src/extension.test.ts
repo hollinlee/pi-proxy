@@ -1,34 +1,45 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { registerProxyTools } from "./extension.ts";
-import type { ProxyRuntime } from "./recovery.ts";
+import { injectProxy, isNetworkCommand, registerProxyExtension } from "./extension.ts";
 
-const diagnostic = { target: "github.com", dns: { ok: true }, proxy: { ok: true }, github: { ok: true } };
+test("recognizes common network commands", () => {
+  assert.equal(isNetworkCommand("git clone https://example.com/repo"), true);
+  assert.equal(isNetworkCommand("curl https://example.com"), true);
+  assert.equal(isNetworkCommand("npm install"), true);
+  assert.equal(isNetworkCommand("printf 'curl https://example.com'"), false);
+  assert.equal(isNetworkCommand("npm test"), true);
+  assert.equal(isNetworkCommand("ls -la"), false);
+});
 
-test("adapter clears rejected runtime creation and retries on the next request", async () => {
-  const tools = new Map<string, any>();
-  const handlers = new Map<string, Array<(...args: any[]) => unknown>>();
-  let attempts = 0;
-  const runtime: ProxyRuntime = {
-    status: () => ({ busy: false, closed: false, ownsFallback: false, cleanupPending: false, retainedEnvironment: false }),
-    diagnose: async () => diagnostic,
-    recover: async () => ({ recovered: true, events: [], retainedEnvironment: true }),
-    shutdown: async () => {},
-  };
-  registerProxyTools({
-    registerTool(tool: any) { tools.set(tool.name, tool); },
-    on(event: string, handler: (...args: any[]) => unknown) { handlers.set(event, [...(handlers.get(event) ?? []), handler]); },
-  } as any, {
-    env: {},
-    create: async () => {
-      attempts++;
-      if (attempts === 1) throw new Error("transient initialization failure");
-      return runtime;
-    },
-  });
-  const diagnose = tools.get("proxy_runtime_diagnose");
-  await assert.rejects(diagnose.execute("first", {}, undefined, undefined, {}), /proxy diagnostics failed/);
-  assert.equal((await diagnose.execute("second", {}, undefined, undefined, {})).details.github.ok, true);
-  assert.equal(attempts, 2);
-  for (const handler of handlers.get("session_shutdown") ?? []) await handler();
+test("injects all proxy environment spellings", () => {
+  const command = injectProxy("git fetch origin", { host: "127.0.0.1", port: 7897 });
+  assert.match(command, /^export HTTP_PROXY='http:\/\/127\.0\.0\.1:7897'/);
+  assert.match(command, /HTTPS_PROXY='http:\/\/127\.0\.0\.1:7897'/);
+  assert.match(command, /all_proxy='http:\/\/127\.0\.0\.1:7897'/);
+});
+
+test("only rewrites network bash calls", () => {
+  const handlers: Record<string, ((event: any) => void)[]> = {};
+  registerProxyExtension({ on(event: string, handler: (value: any) => void) { (handlers[event] ??= []).push(handler); } } as any, { PROXY_HOST: "proxy.local", PROXY_PORT: "8080" });
+  const hook = handlers.tool_call[0];
+  const network = { toolName: "bash", input: { command: "curl https://example.com" } };
+  hook(network);
+  assert.match(network.input.command, /^export HTTP_PROXY=/);
+  const local = { toolName: "bash", input: { command: "npm test" } };
+  hook(local);
+  assert.match(local.input.command, /^export HTTP_PROXY=/);
+  const shell = { toolName: "bash", input: { command: "ls -la" } };
+  hook(shell);
+  assert.equal(shell.input.command, "ls -la");
+  const read = { toolName: "read", input: { path: "https://example.com" } };
+  hook(read);
+  assert.equal(read.input.path, "https://example.com");
+});
+
+test("does not duplicate explicit proxy environment", () => {
+  const handlers: Record<string, ((event: any) => void)[]> = {};
+  registerProxyExtension({ on(event: string, handler: (value: any) => void) { (handlers[event] ??= []).push(handler); } } as any, { PROXY_HOST: "proxy.local", PROXY_PORT: "8080" });
+  const command = { toolName: "bash", input: { command: "HTTPS_PROXY=http://other git fetch" } };
+  handlers.tool_call[0](command);
+  assert.equal(command.input.command, "HTTPS_PROXY=http://other git fetch");
 });

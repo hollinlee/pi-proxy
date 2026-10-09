@@ -21,13 +21,6 @@
     "README.md",
     "!src/*.test.ts"
   ],
-  "exports": {
-    ".": "./src/recovery.ts",
-    "./contracts": "./src/contracts.ts",
-    "./config": "./src/config.ts",
-    "./credentials": "./src/credentials.ts",
-    "./extension": "./src/extension.ts"
-  },
   "pi": {
     "extensions": [
       "./src/extension.ts"
@@ -37,17 +30,12 @@
     "test": "node --test src/*.test.ts",
     "check:load": "pi --no-extensions -e . --list-models >/dev/null"
   },
-  "dependencies": {
-    "undici": "7.16.0",
-    "yaml": "2.8.3"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "typebox": "*"
-  },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.87.1",
-    "@types/node": "^22.19.19",
-    "typebox": "1.3.27"
+    "@types/node": "^22.19.19"
+  },
+  "exports": {
+    ".": "./src/extension.ts",
+    "./config": "./src/config.ts"
   }
 }
